@@ -111,15 +111,25 @@ jobs:
             exit 1
           fi
 
+      - name: Pick the frontend container
+        if: inputs.frontend-dir != ''
+        run: |
+          # Sites with the ddev-viteplus addon have no pnpm in the web container.
+          if [ -f .ddev/docker-compose.viteplus.yaml ]; then
+            echo "FRONTEND_EXEC=ddev exec -s viteplus --dir /app/$FRONTEND_DIR vp" >> "$GITHUB_ENV"
+          else
+            echo "FRONTEND_EXEC=ddev exec --dir /var/www/html/$FRONTEND_DIR pnpm" >> "$GITHUB_ENV"
+          fi
+
       - name: pnpm install and dedupe check
         if: inputs.frontend-dir != ''
         run: |
-          ddev exec --dir "/var/www/html/$FRONTEND_DIR" pnpm install --frozen-lockfile
-          ddev exec --dir "/var/www/html/$FRONTEND_DIR" pnpm dedupe --check
+          $FRONTEND_EXEC install --frozen-lockfile
+          $FRONTEND_EXEC dedupe --check
 
       - name: Frontend build
         if: inputs.frontend-dir != '' && inputs.build-script != ''
-        run: ddev exec --dir "/var/www/html/$FRONTEND_DIR" pnpm run "$BUILD_SCRIPT"
+        run: $FRONTEND_EXEC run "$BUILD_SCRIPT"
 
       - name: Tests
         if: inputs.test-script != ''
