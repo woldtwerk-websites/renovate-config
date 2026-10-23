@@ -23,6 +23,11 @@
   },
   "packageRules": [
     {
+      "description": "Local path packages (web/modules/custom, web/themes/custom, misc/scaffold): not published anywhere, nothing to look up",
+      "matchPackageNames": ["workspace/**"],
+      "enabled": false
+    },
+    {
       "description": "Dev tooling (PHPUnit, coder, phpstan, ...): automerge minor/patch after green CI",
       "matchDepTypes": ["require-dev", "devDependencies"],
       "matchUpdateTypes": ["minor", "patch"],
