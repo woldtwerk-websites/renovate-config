@@ -32,9 +32,10 @@ on:
         type: string
         default: web/modules/custom
       smoke-paths:
+        # Not "/" by default: the CI site has no content, so a node front page is a 404.
         description: Space-separated paths that must answer with HTTP 200
         type: string
-        default: "/ /user/login"
+        default: /user/login
 
 permissions:
   contents: read
