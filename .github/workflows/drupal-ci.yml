@@ -27,10 +27,14 @@ on:
         description: package.json script for the frontend build (empty = skip)
         type: string
         default: build
-      phpunit-paths:
-        description: Space-separated paths with PHPUnit tests (empty = skip)
+      test-script:
+        description: composer.json script that runs the tests (empty = skip)
         type: string
-        default: web/modules/custom
+        default: test
+      ddev-skip-configs:
+        description: Space-separated .ddev/config.*.yaml files not needed in CI, e.g. ones with dev-only hooks
+        type: string
+        default: ""
       smoke-paths:
         # Not "/" by default: the CI site has no content, so a node front page is a 404.
         description: Space-separated paths that must answer with HTTP 200
@@ -53,7 +57,8 @@ jobs:
       HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       FRONTEND_DIR: ${{ inputs.frontend-dir }}
       BUILD_SCRIPT: ${{ inputs.build-script }}
-      PHPUNIT_PATHS: ${{ inputs.phpunit-paths }}
+      TEST_SCRIPT: ${{ inputs.test-script }}
+      DDEV_SKIP_CONFIGS: ${{ inputs.ddev-skip-configs }}
       SMOKE_PATHS: ${{ inputs.smoke-paths }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -68,6 +73,9 @@ jobs:
       - name: Install site from base branch
         run: |
           git checkout --quiet "$BASE_SHA"
+          for f in $DDEV_SKIP_CONFIGS; do rm -f ".ddev/$f"; done
+          # Not needed in CI: all requests go to http://localhost inside the web container.
+          ddev config global --omit-containers=ddev-router,ddev-ssh-agent
           ddev start
           ddev composer install --no-interaction --no-progress
           # Random throwaway password, so drush doesn't print a generated one to the log.
@@ -83,6 +91,7 @@ jobs:
         run: |
           # --force: DDEV post-start hooks (e.g. recipe-unpack) may have touched tracked files.
           git checkout --quiet --force "$HEAD_SHA"
+          for f in $DDEV_SKIP_CONFIGS; do rm -f ".ddev/$f"; done
           ddev restart
           ddev composer install --no-interaction --no-progress
 
@@ -112,14 +121,9 @@ jobs:
         if: inputs.frontend-dir != '' && inputs.build-script != ''
         run: ddev exec --dir "/var/www/html/$FRONTEND_DIR" pnpm run "$BUILD_SCRIPT"
 
-      - name: PHPUnit
-        if: inputs.phpunit-paths != ''
-        run: |
-          # db:db@db is DDEV's fixed local default, not a secret.
-          for path in $PHPUNIT_PATHS; do
-            ddev exec env SIMPLETEST_DB=mysql://db:db@db/db SIMPLETEST_BASE_URL=http://localhost \
-              vendor/bin/phpunit --configuration web/core "$path"
-          done
+      - name: Tests
+        if: inputs.test-script != ''
+        run: ddev composer run-script --timeout=0 "$TEST_SCRIPT"
 
       - name: Smoke test
         run: |
