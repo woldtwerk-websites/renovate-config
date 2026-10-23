@@ -69,9 +69,11 @@ jobs:
           git checkout --quiet "$BASE_SHA"
           ddev start
           ddev composer install --no-interaction --no-progress
-          ddev drush site:install --existing-config --yes
+          # Random throwaway password, so drush doesn't print a generated one to the log.
+          ddev drush site:install --existing-config --yes --account-pass="$(openssl rand -hex 16)"
           # Compare against this snapshot, not the repo: install itself (e.g.
           # translation imports) can make active config differ from the export.
+          mkdir -p .ci-config
           ddev drush config:export --yes --destination=/var/www/html/.ci-config/before
 
       - name: Switch to PR head
@@ -126,4 +128,5 @@ jobs:
 
       - name: Watchdog errors
         if: failure()
-        run: ddev drush watchdog:show --severity=Error --count=50 || true
+        # Numeric severity (3 = error): level names are translated on non-English sites.
+        run: ddev drush watchdog:show --severity=3 --count=50 || true
