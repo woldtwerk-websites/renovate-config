@@ -102,6 +102,20 @@
       "reviewers": ["team:maintainers"]
     },
     {
+      "description": "PHPUnit: Drupal 11 core supports only PHPUnit 11 (core-dev ^11.5, sebastian/diff <8); raise with Drupal 12",
+      "matchPackageNames": ["phpunit/phpunit"],
+      "allowedVersions": "<12"
+    },
+    {
+      "description": "Symfony test components: stay on 7.x like Drupal 11 core-dev (^7.4)",
+      "matchPackageNames": [
+        "symfony/browser-kit",
+        "symfony/css-selector",
+        "symfony/dom-crawler"
+      ],
+      "allowedVersions": "<8"
+    },
+    {
       "description": "Major updates: only created after approval in the Dependency Dashboard, label, never automerge (last rule so it overrides the others)",
       "matchUpdateTypes": ["major"],
       "labels": ["dependencies", "major-update"],
