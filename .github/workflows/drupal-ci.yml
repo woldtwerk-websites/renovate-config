@@ -1,0 +1,133 @@
+# Reusable CI for DDEV-based Drupal projects.
+#
+# Usage in a project (.github/workflows/ci.yml):
+#
+#   on:
+#     pull_request:
+#   permissions:
+#     contents: read
+#   jobs:
+#     drupal:
+#       uses: woldtwerk-websites/renovate-config/.github/workflows/drupal-ci.yml@main
+#
+# Flow: install the site from the base branch's config (no customer data),
+# switch to the PR head, then composer install/audit, drush updb, verify that
+# the update hooks did not change exported config, pnpm checks, tests.
+
+name: Drupal CI
+
+on:
+  workflow_call:
+    inputs:
+      config-dir:
+        description: Config sync directory, relative to the repo root
+        type: string
+        default: config/sync
+      frontend-dir:
+        description: Directory containing package.json and pnpm-lock.yaml, relative to the repo root (empty = skip pnpm steps)
+        type: string
+        default: "."
+      build-script:
+        description: package.json script for the frontend build (empty = skip)
+        type: string
+        default: build
+      phpunit-paths:
+        description: Space-separated paths with PHPUnit tests (empty = skip)
+        type: string
+        default: web/modules/custom
+      smoke-paths:
+        description: Space-separated paths that must answer with HTTP 200
+        type: string
+        default: "/ /user/login"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: drupal-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      CONFIG_DIR: ${{ inputs.config-dir }}
+      FRONTEND_DIR: ${{ inputs.frontend-dir }}
+      BUILD_SCRIPT: ${{ inputs.build-script }}
+      PHPUNIT_PATHS: ${{ inputs.phpunit-paths }}
+      SMOKE_PATHS: ${{ inputs.smoke-paths }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: ddev/github-action-setup-ddev@fdf2f5c97943bae638f31df6df86f1defa6210c0 # v1.12.1
+        with:
+          autostart: false
+
+      - name: Install site from base branch
+        run: |
+          git checkout --quiet "$BASE_SHA"
+          ddev start
+          ddev composer install --no-interaction --no-progress
+          ddev drush site:install --existing-config --yes
+
+      - name: Switch to PR head
+        run: |
+          # --force: DDEV post-start hooks (e.g. recipe-unpack) may have touched tracked files.
+          git checkout --quiet --force "$HEAD_SHA"
+          ddev restart
+          ddev composer install --no-interaction --no-progress
+
+      - name: Composer audit
+        run: ddev composer audit --locked --abandoned=report
+
+      - name: Database updates
+        run: |
+          ddev drush updatedb --yes
+          ddev drush cache:rebuild
+
+      - name: Config export must not differ
+        run: |
+          ddev drush config:export --yes
+          if [ -n "$(git status --porcelain -- "$CONFIG_DIR")" ]; then
+            echo "::error::Update hooks changed configuration. Run 'drush updb && drush cex' locally and commit the result."
+            git status --short -- "$CONFIG_DIR"
+            git diff -- "$CONFIG_DIR"
+            exit 1
+          fi
+
+      - name: pnpm install and dedupe check
+        if: inputs.frontend-dir != ''
+        run: |
+          ddev exec --dir "/var/www/html/$FRONTEND_DIR" pnpm install --frozen-lockfile
+          ddev exec --dir "/var/www/html/$FRONTEND_DIR" pnpm dedupe --check
+
+      - name: Frontend build
+        if: inputs.frontend-dir != '' && inputs.build-script != ''
+        run: ddev exec --dir "/var/www/html/$FRONTEND_DIR" pnpm run "$BUILD_SCRIPT"
+
+      - name: PHPUnit
+        if: inputs.phpunit-paths != ''
+        run: |
+          # db:db@db is DDEV's fixed local default, not a secret.
+          for path in $PHPUNIT_PATHS; do
+            ddev exec env SIMPLETEST_DB=mysql://db:db@db/db SIMPLETEST_BASE_URL=http://localhost \
+              vendor/bin/phpunit --configuration web/core "$path"
+          done
+
+      - name: Smoke test
+        run: |
+          ddev drush status --field=bootstrap | grep -q Successful
+          for path in $SMOKE_PATHS; do
+            echo "GET $path"
+            ddev exec curl --fail --silent --show-error --output /dev/null "http://localhost$path"
+          done
+
+      - name: Watchdog errors
+        if: failure()
+        run: ddev drush watchdog:show --severity=Error --count=50 || true

@@ -1,0 +1,96 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:best-practices"],
+  "timezone": "Europe/Berlin",
+  "schedule": ["before 6am on monday"],
+  "prConcurrentLimit": 5,
+  "prHourlyLimit": 2,
+  "minimumReleaseAge": "3 days",
+  "labels": ["dependencies"],
+  "postUpdateOptions": ["pnpmDedupe"],
+  "rebaseWhen": "behind-base-branch",
+  "platformAutomerge": true,
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 6am on the first day of the month"],
+    "automerge": false
+  },
+  "vulnerabilityAlerts": {
+    "schedule": ["at any time"],
+    "labels": ["security"],
+    "minimumReleaseAge": null,
+    "automerge": false
+  },
+  "packageRules": [
+    {
+      "description": "Dev tooling (PHPUnit, coder, phpstan, ...): automerge minor/patch after green CI",
+      "matchDepTypes": ["require-dev", "devDependencies"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "Dev dependencies",
+      "automerge": true,
+      "reviewers": ["team:maintainers"]
+    },
+    {
+      "description": "GitHub Actions: grouped, no automerge",
+      "matchManagers": ["github-actions"],
+      "groupName": "GitHub Actions",
+      "automerge": false,
+      "reviewers": ["team:maintainers"]
+    },
+    {
+      "description": "Drupal contrib: grouped, human review",
+      "matchPackageNames": [
+        "drupal/*",
+        "!drupal/core",
+        "!drupal/core-*"
+      ],
+      "groupName": "Drupal contrib",
+      "labels": ["dependencies", "drupal-contrib"],
+      "automerge": false,
+      "reviewers": ["team:maintainers"]
+    },
+    {
+      "description": "PHP runtime (Dockerfile, setup-php, composer.json, .tool-versions)",
+      "matchDepNames": ["php"],
+      "groupName": "PHP runtime",
+      "allowedVersions": ">=8.3 <8.5",
+      "labels": ["dependencies", "runtime", "needs-prod-check"],
+      "automerge": false,
+      "reviewers": ["team:maintainers"]
+    },
+    {
+      "description": "Node.js runtime (.nvmrc, setup-node, Dockerfile)",
+      "matchDepNames": ["node"],
+      "groupName": "Node.js runtime",
+      "labels": ["dependencies", "runtime", "needs-prod-check"],
+      "automerge": false,
+      "reviewers": ["team:maintainers"]
+    },
+    {
+      "description": "pnpm (packageManager field, pnpm/action-setup)",
+      "matchDepNames": ["pnpm"],
+      "groupName": "pnpm",
+      "labels": ["dependencies", "runtime"],
+      "automerge": false,
+      "reviewers": ["team:maintainers"]
+    },
+    {
+      "description": "Drupal core: always its own PR, never automerge (placed after the dev rule so it wins for drupal/core-dev)",
+      "matchPackageNames": [
+        "drupal/core",
+        "drupal/core-*"
+      ],
+      "groupName": "Drupal core",
+      "labels": ["dependencies", "drupal-core"],
+      "automerge": false,
+      "reviewers": ["team:maintainers"]
+    },
+    {
+      "description": "Major updates: separate PR, label, never automerge (last rule so it overrides the others)",
+      "matchUpdateTypes": ["major"],
+      "labels": ["dependencies", "major-update"],
+      "automerge": false,
+      "reviewers": ["team:maintainers"]
+    }
+  ]
+}
