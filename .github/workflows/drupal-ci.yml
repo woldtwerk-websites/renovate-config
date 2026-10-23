@@ -73,6 +73,8 @@ jobs:
           ddev drush site:install --existing-config --yes --account-pass="$(openssl rand -hex 16)"
           # Compare against this snapshot, not the repo: install itself (e.g.
           # translation imports) can make active config differ from the export.
+          # Settle derived config (e.g. Canvas regenerates components on rebuild).
+          ddev drush cache:rebuild
           mkdir -p .ci-config
           ddev drush config:export --yes --destination=/var/www/html/.ci-config/before
 
