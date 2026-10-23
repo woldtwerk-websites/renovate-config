@@ -12,17 +12,13 @@
 #
 # Flow: install the site from the base branch's config (no customer data),
 # switch to the PR head, then composer install/audit, drush updb, verify that
-# the update hooks did not change exported config, pnpm checks, tests.
+# the update hooks did not change active config, pnpm checks, tests.
 
 name: Drupal CI
 
 on:
   workflow_call:
     inputs:
-      config-dir:
-        description: Config sync directory, relative to the repo root
-        type: string
-        default: config/sync
       frontend-dir:
         description: Directory containing package.json and pnpm-lock.yaml, relative to the repo root (empty = skip pnpm steps)
         type: string
@@ -54,7 +50,6 @@ jobs:
     env:
       BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
       HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-      CONFIG_DIR: ${{ inputs.config-dir }}
       FRONTEND_DIR: ${{ inputs.frontend-dir }}
       BUILD_SCRIPT: ${{ inputs.build-script }}
       PHPUNIT_PATHS: ${{ inputs.phpunit-paths }}
@@ -75,6 +70,9 @@ jobs:
           ddev start
           ddev composer install --no-interaction --no-progress
           ddev drush site:install --existing-config --yes
+          # Compare against this snapshot, not the repo: install itself (e.g.
+          # translation imports) can make active config differ from the export.
+          ddev drush config:export --yes --destination=/var/www/html/.ci-config/before
 
       - name: Switch to PR head
         run: |
@@ -91,13 +89,11 @@ jobs:
           ddev drush updatedb --yes
           ddev drush cache:rebuild
 
-      - name: Config export must not differ
+      - name: Update hooks must not change config
         run: |
-          ddev drush config:export --yes
-          if [ -n "$(git status --porcelain -- "$CONFIG_DIR")" ]; then
+          ddev drush config:export --yes --destination=/var/www/html/.ci-config/after
+          if ! diff --recursive --unified .ci-config/before .ci-config/after; then
             echo "::error::Update hooks changed configuration. Run 'drush updb && drush cex' locally and commit the result."
-            git status --short -- "$CONFIG_DIR"
-            git diff -- "$CONFIG_DIR"
             exit 1
           fi
 
