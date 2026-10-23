@@ -123,7 +123,8 @@ jobs:
 
       - name: Tests
         if: inputs.test-script != ''
-        run: ddev composer run-script --timeout=0 "$TEST_SCRIPT"
+        # ddev exec, not ddev composer: the latter hides stdout when the script fails.
+        run: ddev exec composer run-script --timeout=0 "$TEST_SCRIPT"
 
       - name: Smoke test
         run: |
