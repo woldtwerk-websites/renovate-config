@@ -28,6 +28,11 @@
       "enabled": false
     },
     {
+      "description": "npm-asset packages from inline composer package repositories: no registry to look up, update by hand",
+      "matchPackageNames": ["npm-asset/**"],
+      "enabled": false
+    },
+    {
       "description": "Dev tooling (PHPUnit, coder, phpstan, ...): automerge minor/patch after green CI",
       "matchDepTypes": ["require-dev", "devDependencies"],
       "matchUpdateTypes": ["minor", "patch"],
