@@ -2,7 +2,7 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["config:best-practices"],
   "timezone": "Europe/Berlin",
-  "schedule": ["before 6am on monday"],
+  "schedule": ["before 6am"],
   "prConcurrentLimit": 5,
   "prHourlyLimit": 2,
   "minimumReleaseAge": "3 days",
@@ -19,9 +19,15 @@
     "schedule": ["at any time"],
     "labels": ["security"],
     "minimumReleaseAge": null,
+    "dependencyDashboardApproval": false,
     "automerge": false
   },
   "packageRules": [
+    {
+      "description": "Catch-all: every minor/patch/pin update not covered by a more specific group below lands in one PR",
+      "matchUpdateTypes": ["minor", "patch", "pin", "pinDigest", "digest"],
+      "groupName": "Non-major dependencies"
+    },
     {
       "description": "Local path packages (web/modules/custom, web/themes/custom, misc/scaffold): not published anywhere, nothing to look up",
       "matchPackageNames": ["workspace/**"],
@@ -96,9 +102,10 @@
       "reviewers": ["team:maintainers"]
     },
     {
-      "description": "Major updates: separate PR, label, never automerge (last rule so it overrides the others)",
+      "description": "Major updates: only created after approval in the Dependency Dashboard, label, never automerge (last rule so it overrides the others)",
       "matchUpdateTypes": ["major"],
       "labels": ["dependencies", "major-update"],
+      "dependencyDashboardApproval": true,
       "automerge": false,
       "reviewers": ["team:maintainers"]
     }
