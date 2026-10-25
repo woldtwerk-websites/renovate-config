@@ -34,6 +34,11 @@
       "enabled": false
     },
     {
+      "description": "Our own FrankenPHP image: rebuilt often and deployed by tag, no digest pinning or updates",
+      "matchPackageNames": ["ghcr.io/woldtwerk-websites/frankenphp-drupal"],
+      "enabled": false
+    },
+    {
       "description": "npm-asset packages from inline composer package repositories: no registry to look up, update by hand",
       "matchPackageNames": ["npm-asset/**"],
       "enabled": false
