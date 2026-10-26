@@ -10,9 +10,23 @@
 #     drupal:
 #       uses: woldtwerk-websites/renovate-config/.github/workflows/drupal-ci.yml@main
 #
-# Flow: install the site from the base branch's config (no customer data),
-# switch to the PR head, then composer install/audit, drush updb, verify that
-# the update hooks did not change active config, pnpm checks, tests.
+# Optional production-DB mode: install from a scrubbed production dump instead
+# of config. The endpoint's authorized_keys entry must force a command that
+# prints a gzipped SQL dump to stdout.
+#
+#       with:
+#         db-ssh-host: dump@db.example.com
+#         db-ssh-known-hosts: db.example.com ssh-ed25519 AAAA...
+#       secrets:
+#         db-snapshot-key: ${{ secrets.DB_SNAPSHOT_KEY }}
+#
+# Without db-ssh-host (or without the secret, e.g. fork PRs) the site is
+# installed from the base branch's config as before.
+#
+# Flow: install the site from the base branch's config, or optionally import a
+# scrubbed production database over SSH, switch to the PR head, then composer
+# install/audit, drush updb, verify that the update hooks did not change active
+# config, pnpm checks, tests.
 
 name: Drupal CI
 
@@ -36,10 +50,23 @@ on:
         type: string
         default: ""
       smoke-paths:
-        # Not "/" by default: the CI site has no content, so a node front page is a 404.
+        # Not "/" by default: after site:install the CI site has no content, so
+        # a node front page is a 404. A production DB import adds "/" itself.
         description: Space-separated paths that must answer with HTTP 200
         type: string
         default: /user/login
+      db-ssh-host:
+        description: SSH destination (user@host) that prints a gzipped scrubbed SQL dump; empty = install from config
+        type: string
+        default: ""
+      db-ssh-known-hosts:
+        description: known_hosts line(s) for db-ssh-host, passed as an input so CI does not depend on how vars reach it
+        type: string
+        default: ""
+    secrets:
+      db-snapshot-key:
+        description: Private SSH key for db-ssh-host (empty on fork PRs = install from config)
+        required: false
 
 permissions:
   contents: read
@@ -60,6 +87,8 @@ jobs:
       TEST_SCRIPT: ${{ inputs.test-script }}
       DDEV_SKIP_CONFIGS: ${{ inputs.ddev-skip-configs }}
       SMOKE_PATHS: ${{ inputs.smoke-paths }}
+      DB_SSH_HOST: ${{ inputs.db-ssh-host }}
+      DB_SSH_KNOWN_HOSTS: ${{ inputs.db-ssh-known-hosts }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -70,6 +99,33 @@ jobs:
         with:
           autostart: false
 
+      - name: Fetch production database
+        # The dump only lives in RUNNER_TEMP: never an artifact, cache or log.
+        if: env.DB_SSH_HOST != ''
+        env:
+          DB_SNAPSHOT_KEY: ${{ secrets.db-snapshot-key }}
+        run: |
+          if [ -z "$DB_SNAPSHOT_KEY" ] || [ -z "$DB_SSH_KNOWN_HOSTS" ]; then
+            echo "::notice::db-ssh-host is set but the key or known_hosts is missing (fork PR or missing secret); installing from config instead."
+            exit 0
+          fi
+          umask 077
+          key="$RUNNER_TEMP/db_key"
+          known_hosts="$RUNNER_TEMP/db_known_hosts"
+          dump="$RUNNER_TEMP/db.sql.gz"
+          trap 'rm -f "$key" "$known_hosts"' EXIT
+          printf '%s\n' "$DB_SNAPSHOT_KEY" > "$key"
+          printf '%s\n' "$DB_SSH_KNOWN_HOSTS" > "$known_hosts"
+          ssh -i "$key" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=30 \
+            -o IdentitiesOnly=yes \
+            -o UserKnownHostsFile="$known_hosts" \
+            -o StrictHostKeyChecking=yes \
+            "$DB_SSH_HOST" > "$dump"
+          gzip -t "$dump"
+          echo "CI_DB_DUMP=$dump" >> "$GITHUB_ENV"
+
       - name: Install site from base branch
         run: |
           git checkout --quiet "$BASE_SHA"
@@ -78,8 +134,17 @@ jobs:
           ddev config global --omit-containers=ddev-router,ddev-ssh-agent
           ddev start
           ddev composer install --no-interaction --no-progress
-          # Random throwaway password, so drush doesn't print a generated one to the log.
-          ddev drush site:install --existing-config --yes --account-pass="$(openssl rand -hex 16)"
+          if [ -n "${CI_DB_DUMP:-}" ]; then
+            # Production-like state: import the scrubbed dump, then run update
+            # hooks and config import against the base branch code.
+            ddev import-db --file="$CI_DB_DUMP"
+            rm -f "$CI_DB_DUMP"
+            ddev drush deploy --yes
+            echo "CI_DB_IMPORTED=1" >> "$GITHUB_ENV"
+          else
+            # Random throwaway password, so drush doesn't print a generated one to the log.
+            ddev drush site:install --existing-config --yes --account-pass="$(openssl rand -hex 16)"
+          fi
           # Compare against this snapshot, not the repo: install itself (e.g.
           # translation imports) can make active config differ from the export.
           # Settle derived config (e.g. Canvas regenerates components on rebuild).
@@ -139,6 +204,14 @@ jobs:
       - name: Smoke test
         run: |
           ddev drush status --field=bootstrap | grep -q Successful
+          # A production dump has a front page node, a fresh install does not.
+          # Callers cannot pass "/" conditionally: secrets are unavailable in `with:`.
+          if [ -n "${CI_DB_IMPORTED:-}" ]; then
+            case " $SMOKE_PATHS " in
+              *" / "*) ;;
+              *) SMOKE_PATHS="/ $SMOKE_PATHS" ;;
+            esac
+          fi
           for path in $SMOKE_PATHS; do
             echo "GET $path"
             ddev exec curl --fail --silent --show-error --output /dev/null "http://localhost$path"
