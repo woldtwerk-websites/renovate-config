@@ -11,8 +11,9 @@
 #       uses: woldtwerk-websites/renovate-config/.github/workflows/drupal-ci.yml@main
 #
 # Optional production-DB mode: install from a scrubbed production dump instead
-# of config. The endpoint's authorized_keys entry must force a command that
-# prints a gzipped SQL dump to stdout.
+# of config. The shared endpoint receives the project (repository) name as
+# SSH_ORIGINAL_COMMAND via its authorized_keys forced command and prints a
+# gzipped SQL dump to stdout.
 #
 #       with:
 #         db-ssh-host: dump@db.example.com
@@ -56,7 +57,7 @@ on:
         type: string
         default: /user/login
       db-ssh-host:
-        description: SSH destination (user@host) that prints a gzipped scrubbed SQL dump; empty = install from config
+        description: SSH destination (user@host) of the shared dump endpoint; it receives the repository name as SSH_ORIGINAL_COMMAND and prints a gzipped SQL dump. Empty = install from config
         type: string
         default: ""
       db-ssh-known-hosts:
@@ -116,13 +117,15 @@ jobs:
           trap 'rm -f "$key" "$known_hosts"' EXIT
           printf '%s\n' "$DB_SNAPSHOT_KEY" > "$key"
           printf '%s\n' "$DB_SSH_KNOWN_HOSTS" > "$known_hosts"
+          # By convention the repository name is the project's directory on the server.
           ssh -i "$key" \
             -o BatchMode=yes \
             -o ConnectTimeout=30 \
             -o IdentitiesOnly=yes \
             -o UserKnownHostsFile="$known_hosts" \
             -o StrictHostKeyChecking=yes \
-            "$DB_SSH_HOST" > "$dump"
+            "$DB_SSH_HOST" \
+            "${GITHUB_REPOSITORY#*/}" > "$dump"
           gzip -t "$dump"
           echo "CI_DB_DUMP=$dump" >> "$GITHUB_ENV"
 
