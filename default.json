@@ -13,8 +13,7 @@
   "lockFileMaintenance": {
     "enabled": true,
     "schedule": ["before 6am on monday"],
-    "automerge": false,
-    "minimumReleaseAge": null
+    "automerge": false
   },
   "osvVulnerabilityAlerts": true,
   "vulnerabilityAlerts": {
@@ -34,6 +33,12 @@
       "description": "Composer: update composer.lock for in-range releases, keep the ranges in composer.json",
       "matchManagers": ["composer"],
       "rangeStrategy": "update-lockfile"
+    },
+    {
+      "description": "Lock file maintenance for Composer and pnpm: no release age check. Renovate cannot date these refreshes, so the check never passes; pnpm applies its own minimumReleaseAge",
+      "matchUpdateTypes": ["lockFileMaintenance"],
+      "matchManagers": ["composer", "npm"],
+      "minimumReleaseAge": null
     },
     {
       "description": "Local path packages (web/modules/custom, web/themes/custom, misc/scaffold): not published anywhere, nothing to look up",
