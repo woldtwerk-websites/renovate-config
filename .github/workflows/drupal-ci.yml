@@ -164,7 +164,18 @@ jobs:
           ddev composer install --no-interaction --no-progress
 
       - name: Composer audit
-        run: ddev composer audit --locked --abandoned=report
+        # ddev exec, not ddev composer: the latter hides stdout when the command fails.
+        # Blocks only PRs that change composer.lock: a newly published advisory
+        # must not fail unrelated PRs (and hold up Renovate automerge).
+        run: |
+          if ddev exec composer audit --locked --abandoned=report; then
+            exit 0
+          fi
+          if git diff --quiet "$BASE_SHA...$HEAD_SHA" -- composer.lock; then
+            echo "::warning::composer audit found advisories, but this PR does not change composer.lock. Update the affected packages in a separate PR."
+            exit 0
+          fi
+          exit 1
 
       - name: Database updates
         run: |
