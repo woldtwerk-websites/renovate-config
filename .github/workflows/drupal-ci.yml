@@ -24,10 +24,16 @@
 # Without db-ssh-host (or without the secret, e.g. fork PRs) the site is
 # installed from the base branch's config as before.
 #
+# Optional: let CI commit config changed by update hooks to Renovate PRs. The
+# PAT needs contents write access; pushes with GITHUB_TOKEN start no new run.
+#
+#       secrets:
+#         config-push-token: ${{ secrets.CONFIG_PUSH_TOKEN }}
+#
 # Flow: install the site from the base branch's config, or optionally import a
 # scrubbed production database over SSH, switch to the PR head, then composer
-# install/audit, drush updb, verify that the update hooks did not change active
-# config, pnpm checks, tests.
+# install/audit, drush updb, verify that the config changed by the update hooks
+# is exported (on Renovate PRs, push the export), pnpm checks, tests.
 
 name: Drupal CI
 
@@ -67,6 +73,9 @@ on:
     secrets:
       db-snapshot-key:
         description: Private SSH key for db-ssh-host (empty on fork PRs = install from config)
+        required: false
+      config-push-token:
+        description: PAT with contents write access; lets CI push config changed by update hooks to Renovate PRs (empty = fail instead)
         required: false
 
 permissions:
@@ -182,13 +191,59 @@ jobs:
           ddev drush updatedb --yes
           ddev drush cache:rebuild
 
-      - name: Update hooks must not change config
+      - name: Config changed by update hooks must be exported
+        # Production runs `drush deploy` (updb, then config:import), so whatever
+        # the update hooks change must already be in the PR's sync directory, or
+        # the import reverts it. On Renovate PRs the export is pushed to the PR
+        # branch when config-push-token is set; the push starts a new CI run.
+        env:
+          CONFIG_PUSH_TOKEN: ${{ secrets.config-push-token }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
         run: |
           ddev drush config:export --yes --destination=/var/www/html/.ci-config/after
-          if ! diff --recursive --unified .ci-config/before .ci-config/after; then
-            echo "::error::Update hooks changed configuration. Run 'drush updb && drush cex' locally and commit the result."
+          sync=$(ddev drush php:eval 'echo realpath(\Drupal\Core\Site\Settings::get("config_sync_directory"));')
+          sync=${sync#/var/www/html/}
+          # Files the update hooks added, changed or removed, relative to the export root.
+          changed=$( { (cd .ci-config/before && find . -type f); (cd .ci-config/after && find . -type f); } \
+            | sort -u | while IFS= read -r f; do
+                cmp -s ".ci-config/before/$f" ".ci-config/after/$f" || echo "$f"
+              done )
+          stale=()
+          while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            if [ -f ".ci-config/after/$f" ]; then
+              cmp -s ".ci-config/after/$f" "$sync/$f" || stale+=("$f")
+            elif [ -e "$sync/$f" ]; then
+              stale+=("$f")
+            fi
+          done <<< "$changed"
+          if [ ${#stale[@]} -eq 0 ]; then
+            exit 0
+          fi
+          for f in "${stale[@]}"; do
+            diff --unified --new-file "$sync/$f" ".ci-config/after/$f" || true
+          done
+          if [ "$PR_AUTHOR" != "renovate[bot]" ] || [ "$HEAD_REPO" != "$GITHUB_REPOSITORY" ] || [ -z "$CONFIG_PUSH_TOKEN" ]; then
+            echo "::error::Update hooks changed configuration that is not in $sync. Run 'drush updb && drush cex' locally and commit the result."
             exit 1
           fi
+          for f in "${stale[@]}"; do
+            if [ -f ".ci-config/after/$f" ]; then
+              mkdir -p "$(dirname "$sync/$f")"
+              cp ".ci-config/after/$f" "$sync/$f"
+            else
+              rm -f "$sync/$f"
+            fi
+          done
+          git add --all -- "$sync"
+          git -c user.name="github-actions[bot]" \
+            -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit --quiet --message "chore: export config changed by update hooks"
+          git push "https://x-access-token:${CONFIG_PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/$HEAD_REF"
+          echo "::notice::Pushed the config changed by update hooks to $HEAD_REF. The new CI run checks the result."
+          exit 1
 
       - name: Pick the frontend container
         if: inputs.frontend-dir != ''
