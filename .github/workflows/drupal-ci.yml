@@ -174,17 +174,26 @@ jobs:
 
       - name: Composer audit
         # ddev exec, not ddev composer: the latter hides stdout when the command fails.
-        # Blocks only PRs that change composer.lock: a newly published advisory
-        # must not fail unrelated PRs (and hold up Renovate automerge).
+        # Fails only on advisories the PR adds: one that already affects the base
+        # branch must not block unrelated PRs (and hold up Renovate automerge).
         run: |
           if ddev exec composer audit --locked --abandoned=report; then
             exit 0
           fi
-          if git diff --quiet "$BASE_SHA...$HEAD_SHA" -- composer.lock; then
-            echo "::warning::composer audit found advisories, but this PR does not change composer.lock. Update the affected packages in a separate PR."
-            exit 0
+          mkdir -p .ci-config/audit-base
+          git show "$BASE_SHA:composer.json" > .ci-config/audit-base/composer.json
+          git show "$BASE_SHA:composer.lock" > .ci-config/audit-base/composer.lock
+          # Non-zero exit when advisories are found, so check the JSON instead.
+          ddev exec composer audit --locked --format=json > .ci-config/audit-head.json || true
+          ddev exec --dir /var/www/html/.ci-config/audit-base composer audit --locked --format=json > .ci-config/audit-base.json || true
+          jq -e .advisories .ci-config/audit-head.json .ci-config/audit-base.json > /dev/null
+          ids() { jq -r '[.advisories[][]?.advisoryId] | unique | .[]' "$1"; }
+          new=$(comm -13 <(ids .ci-config/audit-base.json) <(ids .ci-config/audit-head.json))
+          if [ -n "$new" ]; then
+            echo "::error::This PR adds packages with security advisories: ${new//$'\n'/ }"
+            exit 1
           fi
-          exit 1
+          echo "::warning::composer audit found advisories that already affect the base branch. Update the affected packages in a separate PR."
 
       - name: Database updates
         run: |
