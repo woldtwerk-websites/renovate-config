@@ -15,6 +15,7 @@
     "schedule": ["before 6am on monday"],
     "automerge": false
   },
+  "osvVulnerabilityAlerts": true,
   "vulnerabilityAlerts": {
     "schedule": ["at any time"],
     "labels": ["security"],
