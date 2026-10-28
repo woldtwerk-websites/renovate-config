@@ -13,7 +13,8 @@
   "lockFileMaintenance": {
     "enabled": true,
     "schedule": ["before 6am on monday"],
-    "automerge": false
+    "automerge": false,
+    "minimumReleaseAge": null
   },
   "osvVulnerabilityAlerts": true,
   "vulnerabilityAlerts": {
