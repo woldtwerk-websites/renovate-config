@@ -203,8 +203,12 @@ jobs:
       - name: Config changed by update hooks must be exported
         # Production runs `drush deploy` (updb, then config:import), so whatever
         # the update hooks change must already be in the PR's sync directory, or
-        # the import reverts it. On Renovate PRs the export is pushed to the PR
-        # branch when config-push-token is set; the push starts a new CI run.
+        # the import reverts it. Files the PR itself changes in the sync
+        # directory are its target state: the update hooks may leave them in an
+        # intermediate state that config:import completes, so only files the PR
+        # leaves unchanged are checked. On Renovate PRs the export is pushed to
+        # the PR branch when config-push-token is set; the push starts a new CI
+        # run.
         env:
           CONFIG_PUSH_TOKEN: ${{ secrets.config-push-token }}
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
@@ -222,6 +226,12 @@ jobs:
           stale=()
           while IFS= read -r f; do
             [ -n "$f" ] || continue
+            # The PR changed, added or removed this file in the sync directory
+            # compared to production: config:import sets that state after
+            # updatedb, so skip it.
+            if [ -e ".ci-config/before/$f" ] || [ -e "$sync/$f" ]; then
+              cmp -s ".ci-config/before/$f" "$sync/$f" || continue
+            fi
             if [ -f ".ci-config/after/$f" ]; then
               cmp -s ".ci-config/after/$f" "$sync/$f" || stale+=("$f")
             elif [ -e "$sync/$f" ]; then
