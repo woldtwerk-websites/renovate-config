@@ -201,6 +201,7 @@ jobs:
           ddev drush cache:rebuild
 
       - name: Config changed by update hooks must be exported
+        id: config
         # Production runs `drush deploy` (updb, then config:import), so whatever
         # the update hooks change must already be in the PR's sync directory, or
         # the import reverts it. Files the PR itself changes in the sync
@@ -208,7 +209,7 @@ jobs:
         # intermediate state that config:import completes, so only files the PR
         # leaves unchanged are checked. On Renovate PRs the export is pushed to
         # the PR branch when config-push-token is set; the push starts a new CI
-        # run.
+        # run, so this run skips the remaining steps and passes.
         env:
           CONFIG_PUSH_TOKEN: ${{ secrets.config-push-token }}
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
@@ -261,11 +262,11 @@ jobs:
             -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
             commit --quiet --message "chore: export config changed by update hooks"
           git push "https://x-access-token:${CONFIG_PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/$HEAD_REF"
-          echo "::notice::Pushed the config changed by update hooks to $HEAD_REF. The new CI run checks the result."
-          exit 1
+          echo "pushed=true" >> "$GITHUB_OUTPUT"
+          echo "::notice::Pushed the config changed by update hooks to $HEAD_REF. The remaining steps are skipped, the new CI run checks the result."
 
       - name: Pick the frontend container
-        if: inputs.frontend-dir != ''
+        if: steps.config.outputs.pushed != 'true' && inputs.frontend-dir != ''
         run: |
           # Sites with the ddev-viteplus addon have no pnpm in the web container.
           if [ -f .ddev/docker-compose.viteplus.yaml ]; then
@@ -275,21 +276,22 @@ jobs:
           fi
 
       - name: pnpm install and dedupe check
-        if: inputs.frontend-dir != ''
+        if: steps.config.outputs.pushed != 'true' && inputs.frontend-dir != ''
         run: |
           $FRONTEND_EXEC install --frozen-lockfile
           $FRONTEND_EXEC dedupe --check
 
       - name: Frontend build
-        if: inputs.frontend-dir != '' && inputs.build-script != ''
+        if: steps.config.outputs.pushed != 'true' && inputs.frontend-dir != '' && inputs.build-script != ''
         run: $FRONTEND_EXEC run "$BUILD_SCRIPT"
 
       - name: Tests
-        if: inputs.test-script != ''
+        if: steps.config.outputs.pushed != 'true' && inputs.test-script != ''
         # ddev exec, not ddev composer: the latter hides stdout when the script fails.
         run: ddev exec composer run-script --timeout=0 "$TEST_SCRIPT"
 
       - name: Smoke test
+        if: steps.config.outputs.pushed != 'true'
         run: |
           ddev drush status --field=bootstrap | grep -q Successful
           # A production dump has a front page node, a fresh install does not.
