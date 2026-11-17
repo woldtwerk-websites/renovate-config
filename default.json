@@ -139,6 +139,13 @@
       "allowedVersions": "<8"
     },
     {
+      "description": "Docker digests: a digest has no release timestamp, so the release age check would stay pending forever. A new digest is a rebuild of the same tag with OS and runtime security fixes: automerge after green CI (after the runtime rules, so it wins for the node image)",
+      "matchDatasources": ["docker"],
+      "matchUpdateTypes": ["digest"],
+      "minimumReleaseAgeBehaviour": "timestamp-optional",
+      "automerge": true
+    },
+    {
       "description": "Major updates: only created after approval in the Dependency Dashboard, label, never automerge (last rule so it overrides the others)",
       "matchUpdateTypes": ["major"],
       "labels": ["dependencies", "major-update"],
