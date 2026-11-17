@@ -21,7 +21,7 @@
     "labels": ["security"],
     "minimumReleaseAge": null,
     "dependencyDashboardApproval": false,
-    "automerge": false
+    "automerge": true
   },
   "packageRules": [
     {
@@ -123,6 +123,19 @@
       "labels": ["dependencies", "drupal-core"],
       "automerge": false,
       "reviewers": ["team:maintainers"]
+    },
+    {
+      "description": "Drupal core patch releases (Drupal security releases are patches): own group, no release age, at any time, automerge after green CI, so a security release reaches production the same day, even before GHSA/OSV flag it",
+      "matchPackageNames": [
+        "drupal/core",
+        "drupal/core-*"
+      ],
+      "matchUpdateTypes": ["patch"],
+      "groupName": "Drupal core patch",
+      "minimumReleaseAge": null,
+      "schedule": ["at any time"],
+      "prPriority": 10,
+      "automerge": true
     },
     {
       "description": "PHPUnit: Drupal 11 core supports only PHPUnit 11 (core-dev ^11.5, sebastian/diff <8); raise with Drupal 12",
