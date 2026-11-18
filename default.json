@@ -89,10 +89,21 @@
       "reviewers": ["team:maintainers"]
     },
     {
+      "description": "Drupal contrib patch releases (Drupal security releases ship on Wednesday evenings as patch releases): no release age wait, run during Wednesday security window",
+      "matchPackageNames": [
+        "drupal/*",
+        "!drupal/core",
+        "!drupal/core-*"
+      ],
+      "matchUpdateTypes": ["patch"],
+      "minimumReleaseAge": null,
+      "schedule": ["before 6am", "after 4pm on wednesday"]
+    },
+    {
       "description": "PHP runtime (Dockerfile, setup-php, composer.json, .tool-versions)",
       "matchDepNames": ["php"],
       "groupName": "PHP runtime",
-      "allowedVersions": ">=8.3 <8.5",
+      "allowedVersions": ">=8.3 <8.6",
       "labels": ["dependencies", "runtime", "needs-prod-check"],
       "automerge": false,
       "reviewers": ["team:maintainers"]
