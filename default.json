@@ -9,6 +9,9 @@
   "labels": ["dependencies"],
   "postUpdateOptions": ["pnpmDedupe"],
   "rebaseWhen": "behind-base-branch",
+  "constraints": {
+    "php": "8.5.*"
+  },
   "platformAutomerge": true,
   "lockFileMaintenance": {
     "enabled": true,
